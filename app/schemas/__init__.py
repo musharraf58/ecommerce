@@ -141,3 +141,14 @@ class OrderOut(BaseModel):
 
 class OrderStatusUpdate(BaseModel):
     status: OrderStatus
+
+
+class PaymentOut(BaseModel):
+    id: uuid.UUID
+    order_id: uuid.UUID
+    status: str
+    amount: Decimal
+    client_secret: Optional[str] = None
+
+    class Config:
+        from_attributes = True
