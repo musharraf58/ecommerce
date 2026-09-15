@@ -6,6 +6,7 @@ from pydantic import BaseModel, EmailStr
 from app.models import UserRole
 from decimal import Decimal
 from typing import Optional, List
+from app.models import OrderStatus
 
 
 class CategoryCreate(BaseModel):
@@ -114,3 +115,29 @@ class CartOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class OrderItemOut(BaseModel):
+    id: uuid.UUID
+    product_id: uuid.UUID
+    quantity: int
+    price_at_purchase: Decimal
+    product: ProductOut
+
+    class Config:
+        from_attributes = True
+
+
+class OrderOut(BaseModel):
+    id: uuid.UUID
+    status: OrderStatus
+    total_amount: Decimal
+    created_at: datetime
+    items: List[OrderItemOut]
+
+    class Config:
+        from_attributes = True
+
+
+class OrderStatusUpdate(BaseModel):
+    status: OrderStatus
