@@ -4,6 +4,10 @@
 
 A production-structured REST API for an online store, built with FastAPI and PostgreSQL. Handles user accounts, product catalog, shopping carts, order processing with concurrency-safe inventory management, and Stripe payments.
 
+**Live demo:** [https://ecommerce-api-7l84.onrender.com/docs](https://ecommerce-api-7l84.onrender.com/docs)
+
+> Hosted on Render's free tier — the service spins down after periods of inactivity, so the first request may take 30–60 seconds to wake it up.
+
 ## Features
 
 **Authentication & Authorization**
