@@ -117,6 +117,18 @@ docker compose run --rm api alembic upgrade head
 
 The API will be available at `http://localhost:8000`, with interactive documentation at `http://localhost:8000/docs`.
 
+### Seeding the Database
+
+To load an admin user, a demo customer and 20 sample products across 4 categories (run the migrations first):
+
+```bash
+# Set SEED_ADMIN_EMAIL, SEED_ADMIN_PASSWORD, SEED_CUSTOMER_EMAIL and
+# SEED_CUSTOMER_PASSWORD in your environment or .env, then:
+docker compose run --rm api python -m scripts.seed
+```
+
+The command is safe to run more than once: anything that already exists is skipped, and existing users are never modified. To seed a hosted database such as Neon, run it with `DATABASE_URL` pointing at that database.
+
 ### Running Tests
 
 ```bash
