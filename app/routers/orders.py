@@ -1,10 +1,11 @@
 import uuid
 
+import stripe
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Order, OrderItem, Cart, Product, User, OrderStatus, UserRole
+from app.models import Order, OrderItem, Cart, Payment, PaymentStatus, Product, User, OrderStatus, UserRole
 from app.schemas import OrderOut, OrderStatusUpdate
 from app.dependencies import get_current_user, require_admin
 
@@ -91,6 +92,79 @@ def get_order(
         raise HTTPException(status_code=404, detail="Order not found")
     if order.user_id != user.id and user.role != UserRole.admin:
         raise HTTPException(status_code=403, detail="Not authorized to view this order")
+    return order
+
+
+@router.post(
+    "/{order_id}/cancel",
+    response_model=OrderOut,
+    summary="Cancel my pending order",
+    responses={
+        401: {"description": "Missing or invalid credentials"},
+        404: {"description": "Order not found, or it belongs to another user"},
+        409: {"description": "Order is not pending, or its payment is already in progress"},
+        502: {"description": "The Stripe PaymentIntent could not be cancelled"},
+    },
+)
+def cancel_order(
+    order_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    # 404 for both "doesn't exist" and "belongs to someone else" so existence isn't revealed
+    order = db.query(Order).filter(Order.id == order_id, Order.user_id == user.id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    if order.status != OrderStatus.pending:
+        raise HTTPException(status_code=409, detail="Only pending orders can be cancelled")
+
+    # Atomically claim the cancellation. Only the request that flips pending -> cancelled
+    # continues, so a concurrent double-cancel can never restore stock twice.
+    claimed = (
+        db.query(Order)
+        .filter(Order.id == order.id, Order.status == OrderStatus.pending)
+        .update({Order.status: OrderStatus.cancelled}, synchronize_session=False)
+    )
+    if not claimed:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Only pending orders can be cancelled")
+
+    # Lock products in the same order as checkout (by id) before restoring stock
+    product_ids = sorted({item.product_id for item in order.items}, key=str)
+    locked_products = {
+        p.id: p
+        for p in db.query(Product)
+        .filter(Product.id.in_(product_ids))
+        .order_by(Product.id)
+        .with_for_update()
+        .all()
+    }
+    for item in order.items:
+        locked_products[item.product_id].stock_quantity += item.quantity
+
+    # Cancel any open PaymentIntent so the customer can't pay for a cancelled order
+    payment = db.query(Payment).filter(Payment.order_id == order.id).first()
+    if payment and payment.status != PaymentStatus.succeeded:
+        try:
+            stripe.PaymentIntent.cancel(payment.stripe_payment_intent_id)
+        except stripe.error.InvalidRequestError:
+            # Either already cancelled (fine, e.g. a retry) or not cancellable (payment in flight)
+            try:
+                intent = stripe.PaymentIntent.retrieve(payment.stripe_payment_intent_id)
+                already_cancelled = intent.status == "canceled"
+            except stripe.error.StripeError:
+                already_cancelled = False
+            if not already_cancelled:
+                db.rollback()
+                raise HTTPException(status_code=409, detail="Payment already in progress, order cannot be cancelled")
+        except stripe.error.StripeError:
+            db.rollback()
+            raise HTTPException(status_code=502, detail="Could not cancel the payment, please try again")
+        payment.status = PaymentStatus.failed
+
+    db.commit()
+    db.refresh(order)
     return order
 
 
