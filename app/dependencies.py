@@ -7,21 +7,24 @@ from app.models import User, UserRole
 from app.security import decode_token
 import uuid
 
-security_scheme = HTTPBearer()
+security_scheme = HTTPBearer(auto_error=False)
 
 
 def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security_scheme),
+    credentials: HTTPAuthorizationCredentials | None = Depends(security_scheme),
     db: Session = Depends(get_db),
 ) -> User:
-    token = credentials.credentials
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
 
-    payload = decode_token(token)
+    # HTTPBearer(auto_error=False) so a missing header yields 401, not FastAPI's default 403
+    if credentials is None:
+        raise credentials_exception
+
+    payload = decode_token(credentials.credentials)
     if not payload or payload.get("type") != "access":
         raise credentials_exception
 

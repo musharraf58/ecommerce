@@ -32,7 +32,8 @@ def test_login_wrong_password(client):
 
 def test_me_requires_auth(client):
     response = client.get("/auth/me")
-    assert response.status_code == 403  # HTTPBearer returns 403 when no header is sent at all
+    assert response.status_code == 401
+    assert response.headers["www-authenticate"] == "Bearer"
 
 
 def test_me_with_valid_token(client):
