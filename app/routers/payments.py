@@ -1,3 +1,4 @@
+import logging
 import stripe,uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -8,6 +9,8 @@ from app.database import get_db
 from app.models import Order, Payment, PaymentStatus, OrderStatus, User
 from app.schemas import PaymentOut
 from app.dependencies import get_current_user
+
+logger = logging.getLogger(__name__)
 
 stripe.api_key = settings.stripe_secret_key
 
@@ -78,7 +81,11 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         payment = db.query(Payment).filter(Payment.stripe_payment_intent_id == intent["id"]).first()
         if payment:
             payment.status = PaymentStatus.succeeded
-            payment.order.status = OrderStatus.paid
+            # A cancelled order must stay cancelled; the payment needs a manual refund
+            if payment.order.status == OrderStatus.cancelled:
+                logger.warning("Payment %s succeeded for cancelled order %s", intent["id"], payment.order_id)
+            else:
+                payment.order.status = OrderStatus.paid
             db.commit()
 
     elif event["type"] == "payment_intent.payment_failed":
