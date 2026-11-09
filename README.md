@@ -167,9 +167,17 @@ Copy the printed `whsec_...` signing secret into your `.env` as `STRIPE_WEBHOOK_
 | GET | `/orders` | Authenticated | Own order history |
 | GET | `/orders/{id}` | Owner or Admin | Single order detail |
 | GET | `/orders/admin/all` | Admin | All orders |
+| POST | `/orders/{id}/cancel` | Owner | Cancel your own pending order |
 | PATCH | `/orders/{id}/status` | Admin | Advance order status |
 | POST | `/payments/orders/{id}/create-intent` | Owner | Create a Stripe PaymentIntent |
 | POST | `/payments/webhook` | Stripe | Handle payment lifecycle events |
+
+**Cancelling an order** (`POST /orders/{id}/cancel`, no request body, returns the updated order):
+- Only the owner can cancel; an unknown order or someone else's order returns `404`.
+- Only `pending` orders can be cancelled. Paid, shipped and already-cancelled orders return `409`.
+- Stock is restored in the same transaction, using the same product row locking as checkout. The status change is claimed atomically, so concurrent cancels restore stock only once.
+- An open Stripe PaymentIntent is cancelled too. If the payment is already in progress the order is left pending and `409` is returned; if Stripe is unreachable, `502`.
+- Missing or invalid credentials return `401`.
 
 Full interactive documentation, including request and response schemas, is auto-generated at `/docs`.
 
